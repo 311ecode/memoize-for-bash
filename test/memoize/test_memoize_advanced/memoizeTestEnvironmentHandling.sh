@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-testEnvironmentHandling() {
+memoizeTestEnvironmentHandling() {
     echo "🌍 Testing environment variable handling"
     
     local original_ttl="${MEMOIZE_TTL:-}"

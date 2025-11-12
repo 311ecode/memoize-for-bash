@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-testLargeOutput() {
+memoizeTestLargeOutput() {
     echo "📏 Testing large output handling"
     
     local saved_debug="${DEBUG:-}"

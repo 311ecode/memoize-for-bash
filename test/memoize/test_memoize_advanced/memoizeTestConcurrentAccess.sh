@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-testConcurrentAccess() {
+memoizeTestConcurrentAccess() {
     echo "⚡ Testing concurrent access handling with collision avoidance"
     
     local saved_debug="${DEBUG:-}"

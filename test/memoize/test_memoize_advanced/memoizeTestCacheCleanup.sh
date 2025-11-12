@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-testCacheCleanup() {
+memoizeTestCacheCleanup() {
     echo "🧹 Testing cache cleanup operations"
     
     local saved_debug="${DEBUG:-}"
