@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+memoize_config() {
+    echo "Memoize Configuration:"
+    echo ""
+    echo "Database: ${MEMOIZE_DB_NAME:-.memoize.db}"
+    echo "SQLite busy timeout: ${MEMOIZE_SQLITE_TIMEOUT}ms"
+    echo ""
+    echo "Environment variables:"
+    echo " MEMOIZE_TTL=${MEMOIZE_TTL:-<not set>}"
+    echo " DEBUG=${DEBUG:-<not set>}"
+    echo ""
+    echo "TTL Options:"
+    echo " --xxs: 1 minute"
+    echo " --xs: 15 minutes"
+    echo " --s: 1 hour"
+    echo " --m: 1 day (default)"
+    echo " --l: 1 week"
+    echo " --xl: 1 month"
+    echo " --xxl: 2 months"
+}
