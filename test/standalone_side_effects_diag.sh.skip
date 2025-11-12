@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# Standalone diagnostic script for memoize side effects caching issue
+# Run with: bash test/standalone_side_effects_diag.sh (after cd to util/memoize)
+
+# Remove strict mode for diagnostic to avoid unexpected exits
+set +euo pipefail  # Temporarily disable to prevent termination on non-critical errors
+
+# Get script directory for relative sourcing
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "Script dir: $script_dir"
+
+# Source all memoize components using absolute paths
+echo "Sourcing memoize components..."
+sourced_count=0
+for file in $(find "$script_dir/../src" -name "*.sh" -type f 2>/dev/null | sort); do
+    if source "$file" 2>/dev/null; then
+        echo "Sourced: $file"
+        ((sourced_count++))
+    else
+        echo "Failed to source: $file (skipping)"
+    fi
+done
+echo "Successfully sourced $sourced_count files"
+
+export DEBUG=1
+export MEMOIZE_DB_NAME=".memoize.db"  # Explicit for diag
+
+_mem_log() {
+    if [ -n "$DEBUG" ]; then
+        echo "[diag] $*" >&2
+    fi
+}
+
+echo "🔍 Diagnostic: Testing memoize caching for side effects"
+_mem_log "Starting diagnostic test"
+
+# Setup paths
+git_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+db_path="$git_root/$MEMOIZE_DB_NAME"
+cache_dir="$git_root/.memoize_cache"
+_mem_log "DB path: $db_path"
+_mem_log "Cache dir: $cache_dir"
+
+# Force fresh start: remove existing DB and cache dir
+_mem_log "Forcing fresh start: removing existing DB and cache"
+rm -f "$db_path" 2>/dev/null || true
+rm -rf "$cache_dir" 2>/dev/null || true
+
+# Initialize database
+_mem_log "Initializing DB"
+if declare -f _mem_init_db >/dev/null 2>&1; then
+    _mem_init_db "$db_path" || _mem_log "Warning: _mem_init_db failed"
+else
+    _mem_log "Error: _mem_init_db not available"
+    exit 1
+fi
+mkdir -p "$cache_dir" || _mem_log "Warning: Failed to create cache dir"
+_mem_log "DB and cache dir ready"
+
+# Clear existing cache (now DB exists, should be safe)
+_mem_log "Clearing cache (should be empty)"
+if declare -f memoize_clear >/dev/null 2>&1; then
+    memoize_clear >/dev/null 2>&1 || _mem_log "Note: memoize_clear returned non-zero, but continuing"
+    _mem_log "Clearing complete"
+else
+    _mem_log "Note: memoize_clear not available, skipping"
+fi
+
+# Create temp files
+target_file=$(mktemp) || { _mem_log "Failed to create target_file"; exit 1; }
+command_file=$(mktemp) || { _mem_log "Failed to create command_file"; exit 1; }
+_mem_log "Target file: $target_file"
+_mem_log "Command file: $command_file"
+
+# Create the side-effect script
+cat > "$command_file" <<EOF || { _mem_log "Failed to write command_file"; exit 1; }
+#!/usr/bin/env bash
+echo 'side_effect' >> '$target_file'
+echo "Command executed at \$(date)"  # Add timestamp to output for visibility
+EOF
+chmod +x "$command_file" || { _mem_log "Failed to chmod command_file"; exit 1; }
+
+side_effect_command="$command_file"
+_mem_log "Side effect command: $side_effect_command"
+
+# Compute hash manually for diag
+cmd_string="$side_effect_command"
+hash=$(echo -n "$cmd_string" | sha256sum | cut -d' ' -f1)
+_mem_log "Computed hash: $hash"
+
+# FIRST EXECUTION
+_mem_log "=== FIRST EXECUTION ==="
+if ! first_output=$(memoize "$side_effect_command" 2>&1); then
+    _mem_log "Warning: First memoize call failed"
+fi
+echo "$first_output"  # Print output
+first_exit=${PIPESTATUS[0]}  # Get exit code of memoize
+_mem_log "First exit code: $first_exit"
+_mem_log "First output: '$first_output'"
+
+# Check line count
+first_count=$(wc -l < "$target_file" 2>/dev/null || echo 0)
+_mem_log "Line count after first: $first_count"
+
+# Query DB after first
+_mem_log "=== DB QUERY AFTER FIRST ==="
+if declare -f _mem_sqlite >/dev/null 2>&1; then
+    db_query_after_first=$(_mem_sqlite "$db_path" <<EOF
+SELECT hash, command, timestamp, ttl, output_file, exec_time FROM cache WHERE hash = '$hash';
+EOF
+)
+    _mem_log "DB after first: $db_query_after_first"
+else
+    _mem_log "Error: _mem_sqlite not available"
+fi
+
+# Sleep
+sleep 1
+_mem_log "Slept 1s"
+
+# SECOND EXECUTION
+_mem_log "=== SECOND EXECUTION ==="
+if ! second_output=$(memoize "$side_effect_command" 2>&1); then
+    _mem_log "Warning: Second memoize call failed"
+fi
+echo "$second_output"  # Print output
+second_exit=${PIPESTATUS[0]}
+_mem_log "Second exit code: $second_exit"
+_mem_log "Second output: '$second_output'"
+
+# Check line count
+second_count=$(wc -l < "$target_file" 2>/dev/null || echo 0)
+_mem_log "Line count after second: $second_count"
+
+# Query DB after second
+_mem_log "=== DB QUERY AFTER SECOND ==="
+if declare -f _mem_sqlite >/dev/null 2>&1; then
+    db_query_after_second=$(_mem_sqlite "$db_path" <<EOF
+SELECT hash, command, timestamp, ttl, output_file, exec_time, hit_count FROM cache WHERE hash = '$hash';
+EOF
+)
+    _mem_log "DB after second: $db_query_after_second"
+else
+    _mem_log "Error: _mem_sqlite not available"
+fi
+
+# Check cache file if exists
+output_file="${hash}.out"
+cache_file_path="$cache_dir/$output_file"
+if [ -f "$cache_file_path" ]; then
+    _mem_log "Cache file exists: $cache_file_path"
+    cat "$cache_file_path"
+else
+    _mem_log "Cache file MISSING: $cache_file_path"
+fi
+
+# Final results
+_mem_log "=== RESULTS ==="
+_mem_log "First count: $first_count, Second count: $second_count"
+if [[ "$first_count" -eq 1 && "$second_count" -eq 1 ]]; then
+    echo "✅ DIAGNOSTIC PASS: Caching worked (no re-execution)"
+else
+    echo "❌ DIAGNOSTIC FAIL: Re-execution detected"
+fi
+
+# Cleanup
+rm -f "$target_file" "$command_file" || _mem_log "Warning: Cleanup failed"
+_mem_log "Cleaned up temp files"
+if declare -f memoize_clear >/dev/null 2>&1; then
+    memoize_clear >/dev/null 2>&1 || true
+    _mem_log "Attempted to clear memoize cache"
+fi
+
+echo "Diagnostic complete. Check logs above for clues."
