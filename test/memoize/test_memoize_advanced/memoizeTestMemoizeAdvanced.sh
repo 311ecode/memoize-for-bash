@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-testMemoizeAdvanced() {
+memoizeTestMemoizeAdvanced() {
   export LC_NUMERIC=C  # 🔢 Consistent numeric formatting
 
   # Registry of test functions

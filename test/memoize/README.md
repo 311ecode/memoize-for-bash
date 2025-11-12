@@ -15,6 +15,16 @@ memoize_clear
 memoize_stats
 ```
 
+## Installation
+
+Simply source the loader script to access all memoize functionality:
+
+```bash
+source /path/to/loader
+```
+
+**Note:** The loader automatically sources all required .sh scripts from its directory and subdirectories, providing access to the complete memoize system.
+
 ## Commands
 
 ### memoize
@@ -130,7 +140,7 @@ Comprehensive test suites are included:
 
 # Run specific test suites
 ./test_memoize_basic/testMemoizeBasic.sh
-./test_memoize_advanced/testMemoizeAdvanced.sh  
+./test_memoize_advanced/memoizeTestMemoizeAdvanced.sh  
 ./test_memoize_edge_cases/testMemoizeEdgeCases.sh
 ```
 

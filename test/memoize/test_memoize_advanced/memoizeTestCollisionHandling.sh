@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-testCollisionHandling() {
+memoizeTestCollisionHandling() {
     echo "🌐 Testing collision avoidance under high concurrency"
     
     local saved_debug="${DEBUG:-}"
